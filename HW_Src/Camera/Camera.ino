@@ -7,8 +7,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <EEPROM.h>
-
-
+#include <WiFi.h> 
+#include <WiFiClient.h>
+#include <ESP32_FTPClient.h> 
+#include <HTTPClient.h>
 
 
 #define CAMERA_MODEL_AI_THINKER
@@ -17,20 +19,32 @@
 
 const int trigPin = 4;
 const int echoPin = 2;
+const char* wifiId="LIV WIFI";
+const char* passsword="LIVStudentDublin";
 
 long duration;
 int distance;
+String pic_name = "";
 
+char ftp_server[] = "files.000webhost.com";
+char ftp_user[]   = "testimaagesurlintest";
+char ftp_pass[]   = "2PhJg)OlKZ7MF!V*YD1J";
 
+// you can pass a FTP timeout and debbug mode on the last 2 arguments
+ESP32_FTPClient ftp (ftp_server,ftp_user,ftp_pass, 5000, 2);
 
-void startCameraServer();
 
 void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
   Serial.println();
   
-
+   WiFi.begin(wifiId,passsword);
+  while(WiFi.status()!=WL_CONNECTED){
+    delay(1000);
+    Serial.println("COnnecting to WiFI..");
+  }
+  Serial.println("Connected to WiFI..");
   
   camera_config_t config;
   config.ledc_channel = LEDC_CHANNEL_0;
@@ -83,9 +97,8 @@ void setup() {
   pinMode(echoPin, INPUT); // Sets the echoPin as an Input
   Serial.begin(115200); // Starts the serial communication
 
+ ftp.OpenConnection();
 
-
-  
 }
 
 void loop() {
@@ -94,25 +107,23 @@ void loop() {
   digitalWrite(trigPin, HIGH); //trigger the transmit
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
-
   double distance = (pulseIn(echoPin, HIGH) * 0.034) / 2.0;
   if(distance<=150)
   {
     Serial.print(distance);
     Serial.println(" cm");
-   
-    fb = esp_camera_fb_get();  
+    fb = esp_camera_fb_get(); 
     if(!fb) {
     Serial.println("Camera capture failed");
     }
-    else
-    {
-      size_t pic_len = fb->len;
-      esp_camera_fb_return(fb);
-      size_t output_length;
-      String encoded = base64::encode(fb->buf,pic_len);
-      Serial.println(encoded);
-    }   
+    pic_name = "test.jpg";
+    ftp.OpenConnection();
+    ftp.InitFile("Type I");
+    ftp.ChangeWorkDir("/public_html/"); 
+    const char *f_name = pic_name.c_str();
+    ftp.NewFile( f_name );
+    ftp.WriteData(fb->buf, fb->len);
+    ftp.CloseFile();      
   }
-  delay(100);
+  delay(300);
 }
