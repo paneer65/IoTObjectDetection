@@ -1,8 +1,6 @@
 #include "esp_camera.h"
 #include <EEPROM.h>      
 #include "Arduino.h"
-
-#include <base64.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -11,33 +9,38 @@
 #include <WiFiClient.h>
 #include <ESP32_FTPClient.h> 
 #include <HTTPClient.h>
-
-
+#include "time.h"
 #define CAMERA_MODEL_AI_THINKER
 #include "camera_pins.h"
+#include <ArduinoJson.h>
 
-
+HTTPClient http;
 const int trigPin = 4;
 const int echoPin = 2;
 const char* wifiId="LIV WIFI";
 const char* passsword="LIVStudentDublin";
+char ftp_server[] = "files.000webhost.com";
+char ftp_user[]   = "testimaagesurlintest";
+char ftp_pass[]   = "2PhJg)OlKZ7MF!V*YD1J";
+const int buzzerpin = 14;
+int freq = 2000;
+int channel = 0;
+int channel_1 = 1;
+//int resolution = 8;
+bool check =true;
+bool check_sound = false;
 
 long duration;
 int distance;
 String pic_name = "";
-
-char ftp_server[] = "files.000webhost.com";
-char ftp_user[]   = "testimaagesurlintest";
-char ftp_pass[]   = "2PhJg)OlKZ7MF!V*YD1J";
-
+String apiUrl = "";
 // you can pass a FTP timeout and debbug mode on the last 2 arguments
 ESP32_FTPClient ftp (ftp_server,ftp_user,ftp_pass, 5000, 2);
 
 
 void setup() {
   Serial.begin(115200);
-  Serial.setDebugOutput(true);
-  Serial.println();
+
   
    WiFi.begin(wifiId,passsword);
   while(WiFi.status()!=WL_CONNECTED){
@@ -79,51 +82,100 @@ void setup() {
     config.fb_count = 1;
   }
 
-
+/*
 
 #if defined(CAMERA_MODEL_ESP_EYE)
   pinMode(13, INPUT_PULLUP);
   pinMode(14, INPUT_PULLUP);
 #endif
-
+*/
   // camera init
   esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init failed with error 0x%x", err);
     return;
   }
-
-  pinMode(trigPin, OUTPUT); // Sets the trigPin as an Output
-  pinMode(echoPin, INPUT); // Sets the echoPin as an Input
-  Serial.begin(115200); // Starts the serial communication
-
- ftp.OpenConnection();
-
+  
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  Serial.begin(115200);
+  
+  //ftp.OpenConnection(); 
 }
 
 void loop() {
   // put your main code here, to run repeatedly:
-  camera_fb_t * fb = NULL;
   digitalWrite(trigPin, HIGH); //trigger the transmit
   delayMicroseconds(10);
   digitalWrite(trigPin, LOW);
+  
+  
+  //ledcWriteTone(channel, 2000);
   double distance = (pulseIn(echoPin, HIGH) * 0.034) / 2.0;
-  if(distance<=150)
-  {
-    Serial.print(distance);
-    Serial.println(" cm");
+  
+  if(distance <=150 ){
+    captureImage();
+    delay(1000);
+  }
+}
+
+
+void captureImage(){
+      StaticJsonDocument<200> doc;
+      
+
+    camera_fb_t * fb = NULL;
     fb = esp_camera_fb_get(); 
     if(!fb) {
-    Serial.println("Camera capture failed");
+      Serial.println("Camera capture failed");
     }
-    pic_name = "test.jpg";
+    pic_name = "liveimage.jpg";
+    Serial.println(pic_name);
     ftp.OpenConnection();
     ftp.InitFile("Type I");
-    ftp.ChangeWorkDir("/public_html/"); 
+    ftp.ChangeWorkDir("/public_html/");
+    delay(100); 
+    if (check == true)
+    {
+      ledcSetup(channel, freq, 8);
+      ledcAttachPin(13, channel);
+      ledcSetup(channel_1, freq, 8);
+      ledcAttachPin(14, channel_1);
+      check = false;
+    }
     const char *f_name = pic_name.c_str();
     ftp.NewFile( f_name );
     ftp.WriteData(fb->buf, fb->len);
-    ftp.CloseFile();      
-  }
-  delay(300);
+    ftp.CloseFile();
+    delay(100);
+    apiUrl= "https://stu190wt27.execute-api.us-east-1.amazonaws.com/test/image?image="+pic_name;
+    Serial.println(apiUrl);
+    http.begin(apiUrl);
+    int httpCode = http.GET();
+    String payload = http.getString();
+    if (httpCode > 0) {
+      Serial.println(httpCode);
+      Serial.println(payload);
+    }
+     DeserializationError error = deserializeJson(doc, payload);
+     const char* dir = doc["direction"];
+     Serial.println(dir); 
+     if(dir  == "left")
+     {
+        ledcWriteTone(channel, 2000);
+        delay(3000);
+        ledcWriteTone(channel, 0);
+      }
+      else if (dir == "right")
+      {
+        ledcWriteTone(channel_1, 2000);
+        delay(3000);
+        ledcWriteTone(channel_1, 0);
+      }
+      else
+      {
+        ledcWriteTone(channel, 0);
+        ledcWriteTone(channel_1, 0);
+      }
 }
+   
